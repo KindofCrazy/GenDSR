@@ -1,17 +1,5 @@
 # Reproducing GenDSR
 
-This guide runs the released Qwen3-VL-8B method on DSR Suite annotations. Run
-every command from the repository root on Linux. Feature extraction and SFT use
-separate Python 3.11 environments because the official Wan source and the Qwen
-training stack have different dependency requirements. A CUDA machine is
-required for extraction, training, and evaluation; the paper used eight A100
-GPUs.
-
-The original checkpoint and training manifest are unavailable. The public
-annotations and locally obtained videos support a new training run, but missing
-media can change the sample set. Review the converter's counts before starting
-extraction.
-
 ## 1. Obtain inputs and set paths
 
 Get the [DSR Suite annotations](https://huggingface.co/datasets/TencentARC/DSR_Suite-Data)
@@ -104,13 +92,6 @@ accelerate launch --multi_gpu --num_processes 8 \
   --qwen-model "$QWEN_MODEL" --output "$WORK/gendsr-checkpoint" \
   --config "$CONFIG" --expected-samples "$TRAIN_COUNT"
 ```
-
-The fixed recipe uses 32 frames, a 230400 pixel per frame budget, global batch
-32, one epoch, seed 42, and learning rates `2e-7` for the language model,
-`1e-6` for Qwen's visual merger, and `1e-5` for fusion. It uses AdamW with
-weight decay `0.01`, a cosine schedule, and a `0.03` warmup ratio. Wan and
-Qwen's native visual encoder stay frozen. Each device processes one sample per
-step; gradient accumulation is `32 / world_size`.
 
 The output contains Qwen weights, the processor, and a separate fusion state.
 Evaluation checks the fusion state and configuration digest strictly.

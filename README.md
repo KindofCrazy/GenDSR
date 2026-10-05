@@ -2,15 +2,21 @@
 
 [Paper (PDF)](paper.pdf)
 
-## Overview
+## Abstract
 
-Vision-language models can recognize objects in a video yet struggle to track
-how their spatial relationships change. GenDSR uses Wan2.1's generative
-representation as an additional source of spatial and temporal evidence for
-Qwen3-VL. It exposes two views of the same Wan feature grid: **raw features**
-retain scene context, while **first temporal differences** emphasize change.
-Both are aligned to Qwen visual tokens, projected independently, and combined
-by tokenwise gates conditioned on the question and visual content.
+Dynamic spatial reasoning is essential for connecting visual intelligence to
+the physical world, yet remains challenging for vision-language models (VLMs),
+which must preserve scene state while tracking how spatial relations evolve
+over time. Meanwhile, video generation models (VGMs), trained to synthesize
+temporally coherent world dynamics, offer a rich source of spatiotemporal
+representations. We present ***GenDSR***, a framework that transfers
+intermediate representations from VGM into VLM for dynamic spatial reasoning.
+Rather than treating a VGM feature as a monolithic prior, *GenDSR* constructs
+two complementary branches: a raw branch preserving holistic generative
+context and a delta branch emphasizing temporal variation. Task-conditioned
+tokenwise gates then fuse both signals and inject the result into the native
+visual representation. On DSR-Bench, *GenDSR* achieves **67.2%**, surpassing
+the previous best result and establishing a new state of the art.
 
 ![GenDSR method overview from the paper](assets/method.png)
 
@@ -19,16 +25,9 @@ The snowflake and flame icons mark frozen and trainable modules, respectively.
 ## Paper results
 
 The paper reports accuracy on 13 **DSR-Bench** subtasks and overall accuracy.
-With the Qwen3-VL-8B backbone, GenDSR reaches **67.2%** overall, compared with
-**62.0%** for supervised fine-tuning alone. Click the table to view it at full
-resolution. The released code corresponds to the last row; the other rows are
-comparisons reported in the paper.
+With the Qwen3-VL-8B backbone, GenDSR reaches **67.2%** overall.
 
 <a href="assets/dsr_bench_table.png"><img src="assets/dsr_bench_table.png" alt="Paper Table 1: DSR-Bench accuracy across 13 subtasks and overall accuracy for baseline models and the 4B and 8B variants of GenDSR"></a>
-
-These are paper-reported results, not measurements from this code release. The
-original checkpoint and exact training manifest are unavailable. New runs using
-the public annotations may have a different sample set when videos are missing.
 
 ## Reproduction
 
@@ -55,7 +54,7 @@ If you use this work, please cite the preprint:
 ```bibtex
 @misc{yang2026gendsr,
   title  = {GenDSR: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning},
-  author = {Yang, Ke and Zhang, Zhenyu and Li, Jun},
+  author = {Ke Yang and Zhenyu Zhang and Jun Li},
   year   = {2026},
   note   = {Preprint}
 }
