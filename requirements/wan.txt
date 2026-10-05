@@ -1,0 +1,11 @@
+# Install in a separate environment alongside the official Wan2.1 repository.
+# The official Wan requirements are authoritative for its model implementation.
+torch>=2.5,<3
+transformers==4.49.0
+numpy>=1.26,<3
+PyYAML>=6,<7
+decord>=0.6
+pillow>=10
+sentencepiece>=0.2
+diffusers>=0.30
+

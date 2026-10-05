@@ -1,0 +1,56 @@
+fusion:
+  format_version: 3
+  feature:
+    dim: 1536
+  alignment:
+    type: temporal_interpolate_spatial_pool
+    spatial_merge_size: 2
+  branches:
+    - name: raw
+      operator: identity
+      projection: raw
+    - name: delta
+      operator: finite_difference
+      projection: delta
+      order: 1
+      stride: 1
+      compute_order: delta_then_resize
+      temporal_upsample: interpolate
+  branch_gate:
+    type: conditioned
+    activation: direct
+    condition_on_semantic: true
+    condition_on_task: true
+    raw_weight: learned
+  branch_reducer:
+    type: additive
+  outer_gate:
+    type: fixed
+    init: 0.0
+    fixed_value: 1.0
+  outer_reducer:
+    type: additive
+  initialization:
+    delta_scale: 0.1
+video:
+  num_frames: 32
+  min_pixels: 784
+  max_pixels: 230400
+  backend: decord
+wan:
+  model: Wan2.1-T2V-1.3B
+  layer: 20
+  timestep: 300
+  dtype: bfloat16
+training:
+  seed: 42
+  epochs: 1
+  global_batch_size: 32
+  base_learning_rate: 2.0e-7
+  projector_learning_rate: 1.0e-6
+  fusion_learning_rate: 1.0e-5
+  model_max_length: 8192
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  max_grad_norm: 1.0
+  scheduler: cosine
