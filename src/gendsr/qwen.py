@@ -13,7 +13,7 @@ from .cache import FeatureCache
 from .fusion import GenDSRFusion
 from .labels import labels_from_assistant_spans
 from .mcq import build_sft_aligned_mcq_prompt
-from .video import NUM_FRAMES, configure_qwen_video_processor, set_qwen_frame_count
+from .video import configure_qwen_video_processor
 
 
 def resolve_visual(model: nn.Module) -> nn.Module:
@@ -36,15 +36,15 @@ def qwen_hidden_size(model: nn.Module) -> int:
 
 
 def prepare_model_inputs(
-    row: dict[str, Any], processor, cache: FeatureCache | None,
-    *, training: bool, text_only: bool = False,
-) -> tuple[dict[str, torch.Tensor], list[torch.Tensor] | None]:
+    row: dict[str, Any], processor, cache: FeatureCache, *, training: bool,
+) -> tuple[dict[str, torch.Tensor], list[torch.Tensor]]:
     prompt = row["conversations"][0]["value"].replace("<video>", "", 1).strip()
     if not training:
         prompt = build_sft_aligned_mcq_prompt(prompt)
-    content = [{"type": "text", "text": prompt}]
-    if not text_only:
-        content.insert(0, {"type": "video", "video": str(row["video"])})
+    content = [
+        {"type": "video", "video": str(row["video"])},
+        {"type": "text", "text": prompt},
+    ]
     messages = [{"role": "user", "content": content}]
     if training:
         messages.append({
@@ -52,15 +52,7 @@ def prepare_model_inputs(
         })
     if hasattr(processor, "video_processor"):
         video = processor.video_processor
-        official = row.get("official_frame_indices") if row.get("frame_policy") == "dyn_official" else None
-        if official is not None and not isinstance(official, list):
-            raise ValueError("Official Dyn-Bench frame indices must be a list")
-        video._gendsr_explicit_indices = official
-        video._gendsr_expected_total_frames = (
-            int(row["original_source_num_frames"]) if official is not None else None
-        )
         video._gendsr_video_metadata = []
-        set_qwen_frame_count(processor, len(official) if official is not None else NUM_FRAMES)
     encoded = processor.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=not training,
         return_dict=True, return_tensors="pt",
@@ -75,21 +67,19 @@ def prepare_model_inputs(
         if not bool(labels.ne(-100).any()):
             raise ValueError(f"No assistant answer tokens found for {row['sample_id']}")
         inputs["labels"] = labels
-    features = None
-    if not text_only and cache is not None:
-        metadata = getattr(processor.video_processor, "_gendsr_video_metadata", [])
-        if len(metadata) != 1:
-            raise ValueError("Qwen processor must return metadata for exactly one video")
-        item = metadata[0]
-        indices = item.get("frames_indices") if isinstance(item, dict) else getattr(item, "frames_indices", None)
-        if indices is None:
-            raise ValueError("Qwen processor did not return source frame indices")
-        if isinstance(indices, torch.Tensor):
-            indices = indices.tolist()
-        features = [cache.load(
-            str(row["vgm_feature_key"]), video_path=row["video"],
-            frame_indices=[int(value) for value in indices],
-        )]
+    metadata = getattr(processor.video_processor, "_gendsr_video_metadata", [])
+    if len(metadata) != 1:
+        raise ValueError("Qwen processor must return metadata for exactly one video")
+    item = metadata[0]
+    indices = item.get("frames_indices") if isinstance(item, dict) else getattr(item, "frames_indices", None)
+    if indices is None:
+        raise ValueError("Qwen processor did not return source frame indices")
+    if isinstance(indices, torch.Tensor):
+        indices = indices.tolist()
+    features = [cache.load(
+        str(row["vgm_feature_key"]), video_path=row["video"],
+        frame_indices=[int(value) for value in indices],
+    )]
     return inputs, features
 
 
@@ -180,7 +170,7 @@ class QwenFusionAdapter:
         return output
 
 
-def load_qwen(model_path: str | Path, *, video_mode: str = "normal"):
+def load_qwen(model_path: str | Path):
     from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
     path = Path(model_path)
@@ -190,5 +180,5 @@ def load_qwen(model_path: str | Path, *, video_mode: str = "normal"):
         str(path), torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2",
     )
     processor = AutoProcessor.from_pretrained(str(path))
-    configure_qwen_video_processor(processor, video_mode)
+    configure_qwen_video_processor(processor)
     return model, processor

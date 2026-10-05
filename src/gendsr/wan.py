@@ -11,7 +11,7 @@ import numpy as np
 from .cache import FeatureCacheWriter, sha256_file
 from .config import load_config
 from .data import load_prepared
-from .video import FRAME_POLICY_SHA256, decode_video, dyn_policy_sha256
+from .video import FRAME_POLICY_SHA256, decode_video
 from .wan_schema import WanFeatureConfig, build_cache_metadata
 
 _SIZES = {"landscape": (480, 832), "portrait": (832, 480)}
@@ -35,31 +35,23 @@ def _resize_center_crop(frames: np.ndarray, target: tuple[int, int]) -> np.ndarr
     return np.stack(output, axis=0)
 
 
-def unique_videos(rows: list[dict]) -> dict[str, tuple[Path, str, list[int] | None, int | None]]:
-    videos: dict[str, tuple[Path, str, list[int] | None, int | None]] = {}
+def unique_videos(rows: list[dict]) -> dict[str, Path]:
+    videos: dict[str, Path] = {}
     for row in rows:
         sample_id = str(row["vgm_feature_key"])
         path = Path(row["video"]).resolve()
-        policy = str(row.get("frame_policy", "uniform32"))
-        official = row.get("official_frame_indices") if policy == "dyn_official" else None
-        if policy not in {"uniform32", "dyn_official"}:
-            raise ValueError(f"Unsupported frame policy for {sample_id}: {policy}")
-        if policy == "dyn_official" and not isinstance(official, list):
-            raise ValueError(f"Dyn-Bench video {sample_id} has no official frame indices")
-        expected_total = (
-            int(row["original_source_num_frames"]) if official is not None else None
-        )
-        identity = (path, policy, official, expected_total)
+        if row.get("frame_policy", "uniform32") != "uniform32":
+            raise ValueError(f"Unsupported frame policy for {sample_id}")
         existing = videos.get(sample_id)
-        if existing is not None and existing != identity:
-            raise ValueError(f"videoID={sample_id} has conflicting video or frame policy")
-        videos[sample_id] = identity
+        if existing is not None and existing != path:
+            raise ValueError(f"videoID={sample_id} has conflicting video paths")
+        videos[sample_id] = path
     return videos
 
 
 def extract(
     *, rows: list[dict], cache_root: Path, checkpoint_dir: Path, wan_repo: Path,
-    config_path: Path, device: str = "cuda", video_mode: str = "normal",
+    config_path: Path, device: str = "cuda",
 ) -> dict[str, int]:
     import torch
 
@@ -78,11 +70,8 @@ def extract(
         checkpoint_dir=str(checkpoint_dir), wan_repo=str(wan_repo),
         config=WanFeatureConfig(), device=device,
     )
-    for sample_id, (path, policy, official, expected_total) in videos.items():
-        frames, indices, fps, source_hw = decode_video(
-            str(path), video_mode, frame_indices=official,
-            expected_total_frames=expected_total,
-        )
+    for sample_id, path in videos.items():
+        frames, indices, fps, source_hw = decode_video(str(path))
         size = _SIZES["landscape" if source_hw[1] >= source_hw[0] else "portrait"]
         resized = _resize_center_crop(frames, size)
         metadata = build_cache_metadata(
@@ -95,16 +84,11 @@ def extract(
             generator_input_height_width=size,
             config=WanFeatureConfig(),
             extra={
-                "frame_policy": policy,
-                "frame_policy_sha256": (
-                    FRAME_POLICY_SHA256 if policy == "uniform32"
-                    else dyn_policy_sha256(official)
-                ),
-                "official_frame_indices": official,
-                "original_source_num_frames": expected_total,
+                "frame_policy": "uniform32",
+                "frame_policy_sha256": FRAME_POLICY_SHA256,
                 "canonical_num_frames": len(indices),
                 "video_sha256": sha256_file(path),
-                "video_mode": video_mode,
+                "video_mode": "normal",
                 "generator_condition": "wan_t5_empty_prompt",
                 "video_fps": fps,
             },
@@ -125,14 +109,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--wan-repo", required=True, type=Path)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--video-mode", choices=["normal", "repeat-first", "reversed-video"], default="normal")
     parser.add_argument("--expected-samples", type=int)
     args = parser.parse_args(argv)
     rows = load_prepared(args.data, expected_rows=args.expected_samples)
     print(json.dumps(extract(
         rows=rows, cache_root=args.cache_root, checkpoint_dir=args.wan_checkpoint,
         wan_repo=args.wan_repo, config_path=args.config, device=args.device,
-        video_mode=args.video_mode,
     ), sort_keys=True))
 
 

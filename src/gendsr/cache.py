@@ -10,9 +10,7 @@ from typing import Any, Mapping
 
 import torch
 
-from .video import (
-    FRAME_POLICY_SHA256, NUM_FRAMES, apply_video_mode, dyn_policy_sha256,
-)
+from .video import FRAME_POLICY_SHA256, NUM_FRAMES
 
 WAN_IDENTITY = {
     "generator_model": "Wan2.1-T2V-1.3B",
@@ -54,38 +52,21 @@ def _safe_name(sample_id: str) -> str:
 
 def _check_metadata(
     metadata: Mapping[str, Any], feature: torch.Tensor | None = None,
-    expected_mode: str | None = None, expected_policy: str | None = None,
 ) -> None:
     for key, value in WAN_IDENTITY.items():
         if metadata.get(key) != value:
             raise ValueError(f"Wan cache identity mismatch: {key}={metadata.get(key)!r}, expected {value!r}")
     policy = metadata.get("frame_policy", "uniform32")
-    if policy not in {"uniform32", "dyn_official"}:
-        raise ValueError("Wan cache frame policy mismatch")
-    if expected_policy is not None and policy != expected_policy:
+    if policy != "uniform32":
         raise ValueError("Wan cache frame policy mismatch")
     indices = metadata.get("source_frame_indices", [])
     if len(indices) != metadata.get("source_num_frames") or not indices:
         raise ValueError("Wan cache source frame indices/count mismatch")
-    if policy == "uniform32":
-        if metadata.get("source_num_frames") != NUM_FRAMES:
-            raise ValueError("Wan cache frame count mismatch")
-        if metadata.get("frame_policy_sha256") != FRAME_POLICY_SHA256:
-            raise ValueError("Wan cache frame policy mismatch")
-    else:
-        official = metadata.get("official_frame_indices")
-        if not isinstance(official, list) or not official:
-            raise ValueError("Wan cache is missing official Dyn-Bench frame indices")
-        original_total = metadata.get("original_source_num_frames")
-        if not isinstance(original_total, int) or original_total <= max(official):
-            raise ValueError("Wan cache official source frame count mismatch")
-        if metadata.get("frame_policy_sha256") != dyn_policy_sha256(official):
-            raise ValueError("Wan cache frame policy mismatch")
-        if indices != apply_video_mode(official, metadata.get("video_mode", "normal")):
-            raise ValueError("Wan cache official frame indices mismatch")
-    if metadata.get("video_mode", "normal") not in {"normal", "repeat-first", "reversed-video"}:
-        raise ValueError("Wan cache video mode mismatch")
-    if expected_mode is not None and metadata.get("video_mode") != expected_mode:
+    if metadata.get("source_num_frames") != NUM_FRAMES:
+        raise ValueError("Wan cache frame count mismatch")
+    if metadata.get("frame_policy_sha256") != FRAME_POLICY_SHA256:
+        raise ValueError("Wan cache frame policy mismatch")
+    if metadata.get("video_mode") != "normal":
         raise ValueError("Wan cache video mode mismatch")
     if not metadata.get("video_sha256"):
         raise ValueError("Wan cache is missing source video identity")
@@ -99,13 +80,8 @@ def _check_metadata(
 
 
 class FeatureCache:
-    def __init__(
-        self, root: str | Path, *, expected_mode: str = "normal",
-        expected_policy: str = "uniform32",
-    ):
+    def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
-        self.expected_mode = expected_mode
-        self.expected_policy = expected_policy
         self.index_path = self.root / "index.jsonl"
         if not self.index_path.is_file():
             raise FileNotFoundError(f"Wan cache index is missing: {self.index_path}")
@@ -115,7 +91,7 @@ class FeatureCache:
                 continue
             record = json.loads(line)
             sample_id = _safe_name(str(record["sample_id"]))
-            _check_metadata(record, expected_mode=expected_mode, expected_policy=expected_policy)
+            _check_metadata(record)
             if sample_id in self.records:
                 raise ValueError(f"Duplicate Wan cache videoID: {sample_id}")
             self.records[sample_id] = record
@@ -148,23 +124,13 @@ class FeatureCache:
         if not isinstance(payload, dict) or payload.get("metadata", {}).get("sample_id") != sample_id:
             raise ValueError(f"Wan payload identity mismatch for {sample_id}")
         feature = payload["feature"]
-        _check_metadata(
-            payload["metadata"], feature, expected_mode=self.expected_mode,
-            expected_policy=self.expected_policy,
-        )
+        _check_metadata(payload["metadata"], feature)
         return feature
 
     def check_coverage(self, rows: list[dict[str, Any]], *, exact: bool = True) -> None:
         for row in rows:
-            policy = row.get("frame_policy", "uniform32")
-            if policy != self.expected_policy:
+            if row.get("frame_policy", "uniform32") != "uniform32":
                 raise ValueError(f"Wan cache/frame policy mismatch for {row['sample_id']}")
-            if policy == "dyn_official":
-                record = self.records.get(str(row["vgm_feature_key"]))
-                if record is not None and row.get("official_frame_indices") != record.get("official_frame_indices"):
-                    raise ValueError(f"Wan cache official frame indices mismatch for {row['sample_id']}")
-                if record is not None and row.get("original_source_num_frames") != record.get("original_source_num_frames"):
-                    raise ValueError(f"Wan cache official source frame count mismatch for {row['sample_id']}")
         expected = {str(row["vgm_feature_key"]) for row in rows}
         found = set(self.records)
         missing = expected - found

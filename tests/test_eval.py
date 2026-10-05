@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from gendsr.evaluate import evaluate, parse_letter, summarize
-from gendsr.video import apply_video_mode, uniform_frame_indices
+from gendsr.video import uniform_frame_indices
 
 
 def test_eval_count_and_answer_accounting():
@@ -23,15 +23,13 @@ def test_eval_count_and_answer_accounting():
 def test_cli_preflight_rejects_missing_data(tmp_path):
     with pytest.raises(FileNotFoundError):
         evaluate(
-            benchmark="dsr", condition="vgm", data_path=tmp_path / "missing.jsonl",
+            data_path=tmp_path / "missing.jsonl",
             checkpoint=tmp_path / "checkpoint", config_path=Path(__file__).parents[1] / "configs" / "gendsr.yaml",
             output=tmp_path / "out", expected_samples=1, cache_root=tmp_path / "cache",
         )
 
 
-def test_video_modes_keep_frame_count():
-    normal = uniform_frame_indices(10)
-    assert len(normal) == 32
-    assert uniform_frame_indices(10, "repeat-first") == [0] * 32
-    assert uniform_frame_indices(10, "reversed-video") == list(reversed(normal))
-    assert apply_video_mode([0, 2, 4], "repeat-first") == [0, 0, 0]
+def test_uniform_video_sampling_keeps_frame_count():
+    indices = uniform_frame_indices(10)
+    assert len(indices) == 32
+    assert indices[0] == 0 and indices[-1] == 9

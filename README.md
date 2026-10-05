@@ -1,8 +1,21 @@
 # GenDSR
 
-GenDSR adds clip level Wan2.1 features to Qwen3-VL visual tokens for dynamic spatial reasoning. It uses two feature branches: the raw Wan grid and its first temporal difference. Both are aligned by temporal interpolation and spatial pooling, projected independently, and weighted by gates conditioned on Qwen visual tokens and the text prompt. The weighted sum is added to the native Qwen visual representation.
+GenDSR transfers representations from a frozen video generation model to a video-language model for dynamic spatial reasoning. This repository implements the method described in *GenDSR: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning* by Ke Yang, Zhenyu Zhang, and Jun Li (Nanjing University, 2026 preprint).
 
-This repository contains code for data preparation, Wan feature extraction, supervised fine tuning, and multiple choice evaluation. It does not contain model weights, videos, cached features, or historical scores. The paper and results will be documented separately.
+The code provides data preparation, Wan feature extraction, supervised fine tuning, and DSR-Bench multiple choice evaluation. It does not contain model weights, videos, cached features, or reported benchmark scores.
+
+## Method
+
+Wan2.1-T2V-1.3B encodes each video, adds noise at a fixed diffusion timestep, and makes one denoiser forward pass with an empty prompt. GenDSR takes the intermediate activation from block 20. It forms two complementary branches:
+
+- **Raw:** the activation grid preserves generative spatial and temporal context.
+- **Delta:** the first temporal difference, with a zero grid at the first position, exposes changes between neighboring Wan features. Differencing happens before alignment.
+
+Both branches are aligned to Qwen3-VL's visual-token grid by temporal interpolation and spatial average pooling, then passed through separate learned projectors. Tokenwise gates use the native Qwen visual tokens, both projected branches, and mean-pooled prompt text embeddings that include the question and answer options. The gated sum is added after Qwen's visual merger and before the language model:
+
+`visual_tokens' = visual_tokens + raw_gate * raw + delta_gate * delta`
+
+Wan and Qwen's native visual encoder are frozen. The language model, visual merger, branch projectors, and fusion gates are trained with the standard answer-token supervised fine-tuning loss.
 
 ## Obtain the inputs
 
@@ -53,24 +66,13 @@ gendsr-prepare \
 
 The converter matches `videoID` to the exact local filename stem. It writes one SFT row per available QA, a missing-media JSONL file, and a `train.stats.json` count summary. Review the counts before extraction. The command also accepts the official JSON annotation file.
 
-For Dyn-Bench, provide its `qa_tasks.parquet`, `multi_json.zip` sampling archive, and extracted `videos/<dataset>/<video>.mp4` directory:
-
-```bash
-gendsr-prepare --dataset dyn \
-  --annotations /path/to/Dyn-Bench/qa_tasks.parquet \
-  --sampling-archive /path/to/Dyn-Bench/multi_json.zip \
-  --video-root /path/to/Dyn-Bench/videos \
-  --output /path/to/work/dyn.jsonl \
-  --missing-output /path/to/work/dyn_missing.jsonl
-```
-
-The Dyn-Bench rows retain each video's official frame indices. Extraction and Qwen evaluation read the same indices and reject mismatched caches.
-
 ## 2. Extract Wan features
 
 Activate the Wan environment and set local model paths:
 
 ```bash
+deactivate
+source .venv-wan/bin/activate
 export WAN_CHECKPOINT=/path/to/Wan2.1-T2V-1.3B
 export WAN_REPO=/path/to/Wan2.1
 export CACHE=/path/to/work/wan-cache
@@ -83,15 +85,17 @@ gendsr-extract \
   --config "$CONFIG"
 ```
 
-For DSR Suite, the extractor samples 32 endpoint inclusive frames. For prepared Dyn-Bench data, it uses the official indices in the JSONL. It then resizes and center crops to Wan's native landscape or portrait size, runs Wan2.1-T2V-1.3B in BF16, and captures DiT block 20 at the scheduler step closest to timestep 300. It computes the empty prompt condition using Wan's own T5 encoder and checkpoint. The cache has a portable `index.jsonl`, BF16 `[T,H,W,1536]` tensors, video hashes, exact source frame indices, and metadata checked by training and evaluation.
+The extractor samples 32 endpoint inclusive frames, resizes and center crops to Wan's native landscape or portrait size, runs Wan2.1-T2V-1.3B in BF16, and captures DiT block 20 at the scheduler step closest to timestep 300. It computes the empty prompt condition using Wan's own T5 encoder and checkpoint. The cache has a portable `index.jsonl`, BF16 `[T,H,W,1536]` tensors, video hashes, exact source frame indices, and metadata checked by training and evaluation.
 
 Each video is extracted once even when it has multiple questions. Plan for substantial cache storage.
 
 ## 3. Train
 
-Activate the SFT environment. The fixed recipe uses 32 frames, a 230400 pixel per frame budget, global batch 32, one epoch, seed 42, and learning rates `2e-7` for the language model, `1e-6` for the Qwen visual merger, and `1e-5` for fusion. The vision tower stays frozen. Each device processes one sample per step; gradient accumulation is `32 / world_size`.
+Switch to the SFT environment. The fixed recipe uses 32 frames, a 230400 pixel per frame budget, global batch 32, one epoch, seed 42, and learning rates `2e-7` for the language model, `1e-6` for the Qwen visual merger, and `1e-5` for fusion. It uses AdamW, weight decay `0.01`, a cosine schedule, and a `0.03` warmup ratio. The vision tower stays frozen. Each device processes one sample per step; gradient accumulation is `32 / world_size`. The paper used eight A100 GPUs.
 
 ```bash
+deactivate
+source .venv-sft/bin/activate
 export QWEN_MODEL=/path/to/Qwen3-VL-8B-Instruct
 export OUTPUT=/path/to/work/gendsr-checkpoint
 export EXPECTED_SAMPLES="$(python -c 'import json; print(json.load(open("/path/to/work/train.stats.json"))["converted_rows"])')"
@@ -108,21 +112,43 @@ The output contains Qwen weights, the processor, and a separate fusion state. Ev
 
 ## 4. Evaluate
 
-Prepare DSR-Bench `benchmark.parquet` with `gendsr-prepare` in the same way as training, using a separate output JSONL. Evaluate one condition per command:
+DSR-Bench tests distance, direction, orientation, speed, speed comparison, and direction prediction under absolute and relative viewpoints, plus a non-template subset. In the SFT environment, prepare its `benchmark.parquet` using a separate output JSONL:
 
 ```bash
+gendsr-prepare \
+  --annotations /path/to/DSR_Suite-Data/benchmark.parquet \
+  --video-root "$VIDEO_ROOT" \
+  --output /path/to/work/benchmark.jsonl \
+  --missing-output /path/to/work/benchmark_missing.jsonl
+```
+
+Switch to the Wan environment to build a separate cache for the benchmark videos:
+
+```bash
+deactivate
+source .venv-wan/bin/activate
+gendsr-extract \
+  --data /path/to/work/benchmark.jsonl \
+  --cache-root /path/to/work/benchmark-wan-cache \
+  --wan-checkpoint "$WAN_CHECKPOINT" \
+  --wan-repo "$WAN_REPO" \
+  --config "$CONFIG"
+```
+
+Return to the SFT environment for evaluation:
+
+```bash
+deactivate
+source .venv-sft/bin/activate
 gendsr-eval \
-  --benchmark dsr --condition vgm \
   --data /path/to/work/benchmark.jsonl \
   --checkpoint "$OUTPUT" --cache-root /path/to/work/benchmark-wan-cache \
   --config "$CONFIG" \
   --expected-samples "$(python -c 'import json; print(json.load(open("/path/to/work/benchmark.stats.json"))["converted_rows"])')" \
-  --output /path/to/work/eval-vgm
+  --output /path/to/work/eval
 ```
 
-The five DSR-Bench conditions are `vgm`, `no-vgm`, `text-only`, `repeat-first`, and `reversed-video`. The last two require feature caches created with `gendsr-extract --video-mode repeat-first` or `--video-mode reversed-video` and evaluated with the matching `--condition`. `no-vgm` and `text-only` do not require a cache. A mode mismatch, missing feature, changed video, frame index mismatch, or wrong sample count stops evaluation with an error.
-
-Use `--benchmark dyn` with a prepared Dyn-Bench JSONL for the Dyn-Bench entry. Each run writes `predictions.jsonl` and `summary.json` with counts computed from the provided samples.
+Evaluation uses the standard video and Wan feature cache. A missing feature, changed video, frame index mismatch, or wrong sample count stops evaluation with an error. The run writes `predictions.jsonl` and `summary.json` with counts computed from the provided samples.
 
 ## Verification
 

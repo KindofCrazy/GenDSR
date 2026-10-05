@@ -18,17 +18,17 @@ def test_training_preflight_checks_data_before_model(tmp_path):
         )
 
 
-def test_dyn_evaluation_rejects_wrong_frame_policy_before_model(tmp_path):
+def test_evaluation_rejects_wrong_frame_policy_before_model(tmp_path):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"video")
-    data = tmp_path / "dyn.jsonl"
+    data = tmp_path / "benchmark.jsonl"
     write_jsonl(data, [{
         "sample_id": "qa", "video": str(video), "vgm_feature_key": "clip",
-        "conversations": [], "answer": "A", "frame_policy": "uniform32",
+        "conversations": [], "answer": "A", "frame_policy": "other",
     }])
-    with pytest.raises(ValueError, match="dyn_official"):
+    with pytest.raises(ValueError, match="uniform32"):
         evaluate(
-            benchmark="dyn", condition="text-only", data_path=data,
+            data_path=data,
             checkpoint=tmp_path / "checkpoint", config_path=CONFIG,
             output=tmp_path / "out", expected_samples=1, cache_root=None,
         )
