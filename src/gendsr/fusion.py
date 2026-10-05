@@ -31,17 +31,11 @@ def _align(feature: torch.Tensor, shape: tuple[int, int, int]) -> torch.Tensor:
     return spatial.permute(1, 0, 2, 3).permute(1, 2, 3, 0)
 
 
-class _Identity(nn.Module):
-    def forward(self, feature: torch.Tensor) -> torch.Tensor:
-        return feature
-
-
-class _FirstDifference(nn.Module):
-    def forward(self, feature: torch.Tensor) -> torch.Tensor:
-        output = torch.zeros_like(feature)
-        if feature.shape[0] > 1:
-            output[1:] = feature[1:] - feature[:-1]
-        return output
+def _first_difference(feature: torch.Tensor) -> torch.Tensor:
+    output = torch.zeros_like(feature)
+    if feature.shape[0] > 1:
+        output[1:] = feature[1:] - feature[:-1]
+    return output
 
 
 class GenDSRFusion(nn.Module):
@@ -56,7 +50,6 @@ class GenDSRFusion(nn.Module):
         self.hidden_size = int(hidden_size)
         self.feature_dim = int(feature_dim)
         self.spatial_merge_size = int(spatial_merge_size)
-        self.temporal_operators = nn.ModuleDict({"raw": _Identity(), "delta": _FirstDifference()})
         self.projections = nn.ModuleDict({
             "raw": self._projection(),
             "delta": self._projection(),
@@ -75,9 +68,6 @@ class GenDSRFusion(nn.Module):
         nn.init.constant_(self.gate_heads["delta"].bias, 0.1)
         nn.init.zeros_(self.gate_heads["raw"].weight)
         nn.init.constant_(self.gate_heads["raw"].bias, 1.0)
-        self.branch_scales = nn.ParameterDict()
-        self.learned_kernels = nn.ParameterDict()
-        self.learned_betas = nn.ParameterDict()
 
     def _projection(self) -> nn.Sequential:
         return nn.Sequential(
@@ -109,7 +99,7 @@ class GenDSRFusion(nn.Module):
             raise ValueError(f"Wan feature must be [T,H,W,{self.feature_dim}]")
         feature = feature.to(device=visual.device, dtype=visual.dtype)
         raw = self._project(self.projections["raw"], feature, shape)
-        delta = self.temporal_operators["delta"](feature)
+        delta = _first_difference(feature)
         delta = self._project(self.projections["delta"], delta, shape)
         semantic = visual.reshape(*shape, self.hidden_size).to(dtype=raw.dtype)
         common = [
@@ -117,16 +107,15 @@ class GenDSRFusion(nn.Module):
             _normalize(raw, self.gate_norms["raw"]),
         ]
         task_grid = self._task(task, raw)
-        delta_input = torch.cat(
+        gate_input = torch.cat(
             [*common, _normalize(delta, self.gate_norms["delta"]), task_grid], dim=-1,
         )
-        raw_input = delta_input
         delta_weight = F.linear(
-            delta_input, self.gate_heads["delta"].weight.float(),
+            gate_input, self.gate_heads["delta"].weight.float(),
             self.gate_heads["delta"].bias.float(),
         )
         raw_weight = F.linear(
-            raw_input, self.gate_heads["raw"].weight.float(),
+            gate_input, self.gate_heads["raw"].weight.float(),
             self.gate_heads["raw"].bias.float(),
         )
         generator = raw_weight.to(raw.dtype) * raw + delta_weight.to(raw.dtype) * delta
@@ -162,4 +151,3 @@ class GenDSRFusion(nn.Module):
         if offset != visual_embeds.shape[0]:
             raise ValueError("Qwen visual tokens exceed video_grid_thw accounting")
         return torch.cat(chunks, dim=0)
-

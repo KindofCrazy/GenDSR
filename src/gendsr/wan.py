@@ -66,9 +66,10 @@ def extract(
     writer = FeatureCacheWriter(cache_root)
     from .wan_extractor import WanClipFeatureExtractor
 
+    feature_config = WanFeatureConfig()
     extractor = WanClipFeatureExtractor(
         checkpoint_dir=str(checkpoint_dir), wan_repo=str(wan_repo),
-        config=WanFeatureConfig(), device=device,
+        config=feature_config, device=device,
     )
     for sample_id, path in videos.items():
         frames, indices, fps, source_hw = decode_video(str(path))
@@ -82,7 +83,7 @@ def extract(
             source_timestamps_sec=[float(index / fps) for index in indices],
             source_height_width=source_hw,
             generator_input_height_width=size,
-            config=WanFeatureConfig(),
+            config=feature_config,
             extra={
                 "frame_policy": "uniform32",
                 "frame_policy_sha256": FRAME_POLICY_SHA256,

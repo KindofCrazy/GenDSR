@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 
@@ -95,7 +95,7 @@ class WanClipFeatureExtractor:
             ).contiguous()
         del text_encoder
 
-    def extract(self, frames: np.ndarray, *, metadata: Dict[str, Any]) -> torch.Tensor:
+    def extract(self, frames: np.ndarray, *, metadata: dict[str, Any]) -> torch.Tensor:
         import torch
 
         if self.config.generator_layer < 0 or self.config.generator_layer >= len(self.model.blocks):
@@ -118,7 +118,7 @@ class WanClipFeatureExtractor:
             seq_len = int(metadata["generator_num_tokens"])
             timestep = self.selected_timestep.reshape(1)
             context = [self.prompt_context.to(self.device)]
-            captured: Dict[str, torch.Tensor] = {}
+            captured: dict[str, torch.Tensor] = {}
 
             def hook(_module, _inputs, output):
                 captured["feature"] = output.detach()
@@ -170,4 +170,3 @@ def _add_scheduler_noise(latent: Any, *, scheduler: Any, timestep: Any, seed: in
     generator.manual_seed(seed)
     noise = torch.randn(latent.shape, generator=generator, device=latent.device, dtype=latent.dtype)
     return scheduler.add_noise(latent.unsqueeze(0), noise.unsqueeze(0), timestep.reshape(1))[0]
-

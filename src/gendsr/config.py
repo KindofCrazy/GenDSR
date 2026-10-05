@@ -47,7 +47,3 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if wan != {"model": "Wan2.1-T2V-1.3B", "layer": 20, "timestep": 300, "dtype": "bfloat16"}:
         raise ValueError("Wan settings must use the fixed model, layer, timestep, and dtype")
     return config
-
-
-def default_config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "gendsr.yaml"

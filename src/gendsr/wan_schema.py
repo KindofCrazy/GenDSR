@@ -3,21 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Iterable, Mapping, Sequence
 
 
-DEFAULT_WAN_CONFIG: Dict[str, Any] = {
-    "generator_model": "Wan2.1-T2V-1.3B",
-    "generator_task": "t2v-1.3B",
-    "generator_feature_scope": "clip_level_wan_feature",
-    "generator_layer": 20,
-    "diffusion_timestep": 300,
-    "generator_feat_dim": 1536,
-    "generator_vae_stride": (4, 8, 8),
-    "generator_patch_size": (1, 2, 2),
-    "generator_input_resize": "wan_native_resize_crop",
-    "canonical_num_frames": 32,
-}
+VAE_STRIDE = (4, 8, 8)
+PATCH_SIZE = (1, 2, 2)
 
 
 @dataclass(frozen=True)
@@ -28,13 +18,13 @@ class WanFeatureConfig:
     generator_layer: int = 20
     diffusion_timestep: int = 300
     generator_feat_dim: int = 1536
-    generator_vae_stride: Tuple[int, int, int] = (4, 8, 8)
-    generator_patch_size: Tuple[int, int, int] = (1, 2, 2)
+    generator_vae_stride: tuple[int, int, int] = VAE_STRIDE
+    generator_patch_size: tuple[int, int, int] = PATCH_SIZE
     generator_input_resize: str = "wan_native_resize_crop"
     canonical_num_frames: int = 32
     generator_size_key: str = "auto"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["generator_vae_stride"] = list(self.generator_vae_stride)
         data["generator_patch_size"] = list(self.generator_patch_size)
@@ -55,10 +45,10 @@ def compute_wan_grid_shapes(
     *,
     source_num_frames: int,
     generator_input_height_width: Sequence[int],
-    vae_stride: Sequence[int] = DEFAULT_WAN_CONFIG["generator_vae_stride"],
-    patch_size: Sequence[int] = DEFAULT_WAN_CONFIG["generator_patch_size"],
+    vae_stride: Sequence[int] = VAE_STRIDE,
+    patch_size: Sequence[int] = PATCH_SIZE,
     latent_channels: int = 16,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute Wan latent and denoiser token grids for a clip-level input.
 
     Wan2.1 T2V expects latent tensors shaped [C, F_latent, H/8, W/8]. Its DiT
@@ -105,10 +95,10 @@ def build_cache_metadata(
     generator_input_height_width: Sequence[int],
     source_padding_policy: str = "none",
     config: WanFeatureConfig = WanFeatureConfig(),
-    extra: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build a serializable metadata record for one cached feature tensor."""
-    metadata: Dict[str, Any] = {
+    metadata: dict[str, Any] = {
         "schema_version": 1,
         "sample_id": str(sample_id),
         "video_path": str(video_path),
@@ -178,4 +168,3 @@ def validate_cache_record(record: Mapping[str, Any]) -> None:
 def validate_index_records(records: Iterable[Mapping[str, Any]]) -> None:
     for record in records:
         validate_cache_record(record)
-
