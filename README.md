@@ -1,11 +1,6 @@
 # GenDSR: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning
 
-**Ke Yang · Zhenyu Zhang · Jun Li** · Nanjing University
-
-GenDSR is the code release for our 2026 preprint. It transfers intermediate
-features from a frozen video generation model into a video-language model to
-improve reasoning about changing spatial relationships. This repository contains
-data preparation, feature extraction, training, and DSR-Bench evaluation code.
+[Paper (PDF)](paper.pdf)
 
 ## Overview
 
@@ -17,36 +12,19 @@ retain scene context, while **first temporal differences** emphasize change.
 Both are aligned to Qwen visual tokens, projected independently, and combined
 by tokenwise gates conditioned on the question and visual content.
 
-```mermaid
-flowchart LR
-    V[Video] --> W[Frozen Wan2.1]
-    V --> Q[Qwen3-VL visual tokens]
-    W --> R[Raw branch]
-    W --> D[Temporal difference branch]
-    T[Question and options] --> G[Task-conditioned gates]
-    Q --> G
-    R --> G
-    D --> G
-    Q --> F[Residual fusion]
-    G --> F
-    F --> L[Qwen3-VL language model]
-```
+![GenDSR method overview from the paper](assets/method.png)
 
-Wan features are extracted with one denoiser pass under an empty-prompt
-condition at timestep 300, using zero-indexed DiT block 20. Temporal
-differences are computed on the native Wan grid before temporal interpolation
-and spatial pooling. The fused residual is added after Qwen's visual merger;
-Wan and Qwen's native visual encoder remain frozen.
+The snowflake and flame icons mark frozen and trainable modules, respectively.
 
 ## Paper results
 
-Overall accuracy on **DSR-Bench**, as reported in the manuscript for the
-Qwen3-VL-8B backbone:
+The paper reports accuracy on 13 **DSR-Bench** subtasks and overall accuracy.
+With the Qwen3-VL-8B backbone, GenDSR reaches **67.2%** overall, compared with
+**62.0%** for supervised fine-tuning alone. Click the table to view it at full
+resolution. The released code corresponds to the last row; the other rows are
+comparisons reported in the paper.
 
-| Model | Accuracy |
-| --- | ---: |
-| Qwen3-VL-8B + SFT | 62.0% |
-| GenDSR | **67.2%** |
+<a href="assets/dsr_bench_table.png"><img src="assets/dsr_bench_table.png" alt="Paper Table 1: DSR-Bench accuracy across 13 subtasks and overall accuracy for baseline models and the 4B and 8B variants of GenDSR"></a>
 
 These are paper-reported results, not measurements from this code release. The
 original checkpoint and exact training manifest are unavailable. New runs using
@@ -65,16 +43,10 @@ four entry points:
 | Train | `gendsr-train` | Fine-tune Qwen3-VL-8B with raw and temporal-difference fusion |
 | Evaluate | `gendsr-eval` | Measure DSR-Bench sample-level accuracy |
 
-Extraction and SFT require separate Python 3.11 environments. The paper used
-eight A100 GPUs. Model weights, videos, and cached features are not included;
+Model weights, videos, and cached features are not included;
 obtain the [DSR Suite annotations and media](https://huggingface.co/datasets/TencentARC/DSR_Suite-Data),
 [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct), and
 [Wan2.1-T2V-1.3B](https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B) separately.
-
-The main implementation is in [`src/gendsr/fusion.py`](src/gendsr/fusion.py),
-with model integration in [`qwen.py`](src/gendsr/qwen.py) and Wan extraction in
-[`wan_extractor.py`](src/gendsr/wan_extractor.py). The fixed method and training
-recipe are in [`configs/gendsr.yaml`](configs/gendsr.yaml).
 
 ## Citation
 

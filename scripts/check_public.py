@@ -1,4 +1,4 @@
-"""Fail if a release contains private experiment references or generated media."""
+"""Fail if a release contains private references or unapproved binary files."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "build", "dist"}
-GENERATED = {".pt", ".pth", ".safetensors", ".mp4", ".mov", ".mkv", ".png", ".jpg", ".parquet", ".jsonl", ".zip"}
+BINARY_SUFFIXES = {".pt", ".pth", ".safetensors", ".mp4", ".mov", ".mkv", ".png", ".jpg", ".pdf", ".parquet", ".jsonl", ".zip"}
+RELEASE_ASSETS = {"assets/method.png", "assets/dsr_bench_table.png", "paper.pdf"}
 TEXT_SUFFIXES = {".py", ".toml", ".yaml", ".yml", ".md", ".txt", ".sh", ".json", ""}
 FORBIDDEN = [
     re.compile(r"\b[Ee]\d{1,3}(?:[_-][A-Za-z0-9]+)?\b"),
@@ -42,8 +43,9 @@ def main() -> None:
         relative = path.relative_to(ROOT)
         if any(part in SKIP_DIRS for part in relative.parts):
             continue
-        if path.suffix.lower() in GENERATED:
-            errors.append(f"{relative}: generated media or checkpoint")
+        if path.suffix.lower() in BINARY_SUFFIXES:
+            if relative.as_posix() not in RELEASE_ASSETS:
+                errors.append(f"{relative}: unapproved binary file")
             continue
         if path.suffix.lower() not in TEXT_SUFFIXES or relative.as_posix() == "scripts/check_public.py":
             continue
@@ -58,4 +60,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
