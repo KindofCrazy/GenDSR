@@ -1,6 +1,6 @@
 # GenDSR: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning
 
-[Paper (PDF)](paper.pdf)
+[Paper (arXiv)](https://arxiv.org/abs/2610.41314) · [arXiv PDF](https://arxiv.org/pdf/2610.41314) · [Repository PDF](paper.pdf)
 
 ## Abstract
 
@@ -49,14 +49,17 @@ obtain the [DSR Suite annotations and media](https://huggingface.co/datasets/Ten
 
 ## Citation
 
-If you use this work, please cite the preprint:
+If you use this work, please cite the [arXiv paper](https://arxiv.org/abs/2610.41314):
 
 ```bibtex
 @misc{yang2026gendsr,
-  title  = {GenDSR: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning},
-  author = {Ke Yang and Zhenyu Zhang and Jun Li},
-  year   = {2026},
-  note   = {Preprint}
+  title         = {{GenDSR}: Transferring Representations from Video Generation Models for Dynamic Spatial Reasoning},
+  author        = {Ke Yang and Zhenyu Zhang and Jun Li},
+  year          = {2026},
+  eprint        = {2610.41314},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV},
+  url           = {https://arxiv.org/abs/2610.41314}
 }
 ```
 
